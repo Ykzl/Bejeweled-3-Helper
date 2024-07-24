@@ -1,85 +1,12 @@
 import sys
-from pynput import keyboard, mouse
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton
-from PyQt5.QtCore import Qt, QTimer, QDateTime, QPoint
-from PyQt5.QtGui import QPainter, QColor, QFont, QPen, QCursor, QMouseEvent
-import pygetwindow as gw
-import win32gui
-import ctypes
-import os
 import time
+from pynput import keyboard
+from PyQt5.QtCore import QDateTime, QPoint, Qt, QTimer
+from PyQt5.QtWidgets import QApplication, QPushButton, QWidget
+from PyQt5.QtGui import QColor, QCursor, QFont, QMouseEvent, QPainter, QPen
+from winMemUtils import getActiveWindowTitle, getWindow, read4Bytes, write4Bytes, pid
 
 
-def getActiveWindowTitle():
-    hwnd = win32gui.GetForegroundWindow()
-    return win32gui.GetWindowText(hwnd)
-
-
-def getWindow(title="Bejeweled 3"):
-    try:
-        for window in gw.getWindowsWithTitle(title):
-            if window.title != title:
-                continue
-            x, y, width, height = window.left + 8, window.top + 32, window.width - 16, window.height - 40
-            return (x + width, y, int(16 / 9 * height - width), height)
-        print(f"Window with title '{title}' not found.")
-        return (0, 0, 533, 1200)
-    except IndexError:
-        print(f"Window with title '{title}' not found.")
-        return (0, 0, 533, 1200)
-
-
-def getPID(pName):
-    PIDs = os.popen(f'wmic process where name="{pName}" get processid').readlines()
-    for line in PIDs:
-        if line.strip().isdigit():
-            return int(line.strip())
-
-
-def read4Bytes(address, offsets=[], dataType="int", buffer=None):
-    if not buffer:
-        buffer = ctypes.create_string_buffer(4)
-    if ctypes.windll.kernel32.ReadProcessMemory(processHandle, address, buffer, 4, ctypes.byref(ctypes.c_ulong(0))):
-        if dataType == "float" and not offsets:
-            output = ctypes.c_float.from_buffer_copy(buffer.raw).value
-        else:
-            output = int.from_bytes(buffer.raw, byteorder="little")
-    else:
-        return -1
-
-    if offsets:
-        if output == 0:
-            return -1
-        return read4Bytes(output + offsets[0], offsets[1:], dataType, buffer)
-    else:
-        return output
-
-
-def write4Bytes(address, data, offsets=[], dataType="int"):
-    if len(offsets) >= 2:
-        address = read4Bytes(address, offsets[:-1])
-        if address <= 0:
-            return False
-    if len(offsets) >= 1:
-        address += offsets[-1]
-
-    if dataType == "int":
-        buffer = ctypes.create_string_buffer(int(data).to_bytes(4, byteorder="little"))
-    elif dataType == "float":
-        buffer = ctypes.create_string_buffer(ctypes.c_float(float(data)).raw)
-
-    success = ctypes.windll.kernel32.WriteProcessMemory(processHandle, address, buffer, len(buffer), ctypes.byref(ctypes.c_ulong(0)))
-
-    if not success:
-        error_code = ctypes.GetLastError()
-        print(f"Failed to write to memory. Error code: {error_code}")
-        return False
-
-    return True
-
-
-pid = getPID("Bejeweled3.exe")
-processHandle = ctypes.windll.kernel32.OpenProcess(0x1F0FFF, False, pid)
 color = {
     -1: {"color": QColor(0, 0, 0, 255), "name": ""},
     0: {"color": QColor(255, 0, 0, 255), "name": "红"},
@@ -89,7 +16,14 @@ color = {
     4: {"color": QColor(128, 0, 255, 255), "name": "紫"},
     5: {"color": QColor(255, 128, 0, 255), "name": "橙"},
     6: {"color": QColor(0, 0, 255, 255), "name": "蓝"},
-    4294967295: {"color": QColor(0, 0, 0, 255), "name": ""},
+    4294967295: {"color": QColor(0, 0, 0, 255), "name": "无"},
+}
+special = {
+    0: "无",
+    1: "火",
+    2: "超",
+    4: "闪",
+    5: "星",
 }
 saveStates = [None for i in range(12)]
 keyPressed = []
@@ -115,9 +49,7 @@ def saveOrLoad(i):
 
 
 class Window(QWidget):
-
     def __init__(self, parent=None):
-
         def createButtonSavestate(i):
             button = QPushButton(f"{i}", self)
             button.setGeometry(15 + 50 * i, self.height() - 110, 50, 50)
@@ -144,11 +76,11 @@ class Window(QWidget):
         self.buttonSavestate = [createButtonSavestate(i) for i in range(10)]
         self.buttonCursorColor = [createButtonCursorColor(i) for i in range(7)]
         self.buttonCursorSpecial = []
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(0, 0, "无"))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(1, 1, "火"))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(2, 2, "超"))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(4, 3, "闪"))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(5, 4, "星"))
+        self.buttonCursorSpecial.append(createButtonCursorSpecial(0, 0, special[0]))
+        self.buttonCursorSpecial.append(createButtonCursorSpecial(1, 1, special[1]))
+        self.buttonCursorSpecial.append(createButtonCursorSpecial(2, 2, special[2]))
+        self.buttonCursorSpecial.append(createButtonCursorSpecial(4, 3, special[4]))
+        self.buttonCursorSpecial.append(createButtonCursorSpecial(5, 4, special[5]))
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.updateData)
@@ -161,7 +93,7 @@ class Window(QWidget):
         global cursor
         if event.button() == Qt.LeftButton:
             x, y = event.pos().x(), event.pos().y()
-            if x >= 10 and x < 522 and y >= 400 and y < 912:
+            if 10 <= x < 522 and 400 <= y < 912:
                 ix, iy = int((x - 10) / 64), int((y - 400) / 64)
                 if cursor != (ix, iy):
                     cursor = (ix, iy)
@@ -239,17 +171,9 @@ class Window(QWidget):
                 gridX, gridY = drawX + ix * 64, drawY + iy * 64
                 gridColor = color[field[iy][ix]["color"]]["color"]
                 self.drawRect(painter, gridX, gridY, gridX + 64, gridY + 64, gridColor)
-                match (field[iy][ix]["special"]):
-                    case 1:
-                        self.drawText(painter, gridX + 19, gridY + 19, "火")
-                    case 2:
-                        self.drawText(painter, gridX + 19, gridY + 19, "超", Qt.white)
-                    case 4:
-                        self.drawText(painter, gridX + 19, gridY + 19, "闪")
-                    case 5:
-                        self.drawText(painter, gridX + 19, gridY + 19, "星")
-                    case _:
-                        pass
+                if field[iy][ix]["special"] > 0:
+                    textColor = Qt.black if field[iy][ix]["special"] != 2 else Qt.white
+                    self.drawText(painter, gridX + 19, gridY + 19, special[field[iy][ix]["special"]], textColor)
         if cursor:
             cursorAddress = field[cursor[1]][cursor[0]]["address"]
             cursorColor = field[cursor[1]][cursor[0]]["color"]
@@ -257,7 +181,7 @@ class Window(QWidget):
             cursorPen = QPen(QColor(0, 0, 0, 255), 2) if cursorColor <= 6 else QPen(QColor(255, 255, 255, 255), 2)
             self.drawRect(painter, drawX + 64 * cursor[0] + 8, drawY + 64 * cursor[1] + 8, drawX + 64 * cursor[0] + 56, drawY + 64 * cursor[1] + 56, brush=Qt.NoBrush, border=cursorPen)
             self.drawText(painter, drawX, drawY + 520, f"地址: 0x{hex(cursorAddress)[2:].upper()}")
-            self.drawText(painter, drawX, drawY + 550, f"颜色: {color[cursorColor]['name']}")
+            self.drawText(painter, drawX, drawY + 550, f"颜色: {color[cursorColor]['name']} 特宝:{special[cursorSpecial]}")
 
         if mode == "Ice Storm":
             ratio = (iceComboAllowTime + iceComboTime - currentTime) / iceComboAllowTime
@@ -274,13 +198,13 @@ class Window(QWidget):
 
         painter.end()
 
-    def drawText(self, painter, X, Y, text, color=Qt.black):
+    def drawText(self, painter: QPainter, X, Y, text, color=Qt.black):
         painter.setPen(color)
         textRect = self.rect()
         textRect.moveTopLeft(QPoint(X, Y))
         painter.drawText(textRect, Qt.AlignLeft, text)
 
-    def drawRect(self, painter, X1, Y1, X2, Y2, brush=QColor(255, 255, 255, 255), border=QPen(QColor(0, 0, 0, 255), 1)):
+    def drawRect(self, painter: QPainter, X1, Y1, X2, Y2, brush=QColor(255, 255, 255, 255), border=QPen(QColor(0, 0, 0, 255), 1)):
         if X2 < X1 or Y2 < Y1:
             return
         painter.setPen(border)
