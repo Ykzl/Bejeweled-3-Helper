@@ -1,5 +1,7 @@
+import os
 import sys
 import time
+import pickle
 from pynput import keyboard
 from PyQt5.QtCore import QDateTime, QPoint, Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QPushButton, QWidget
@@ -19,13 +21,18 @@ color = {
     4294967295: {"color": QColor(0, 0, 0, 255), "name": "无"},
 }
 special = {
+    -1: "",
     0: "无",
     1: "火",
     2: "超",
     4: "闪",
     5: "星",
 }
-saveStates = [None for i in range(12)]
+if os.path.exists("saveStates.dump"):
+    with open("saveStates.dump","rb") as f:
+        saveStates = pickle.load(f)
+else:
+    saveStates = [None for i in range(10)]
 keyPressed = []
 logs = ""
 logsTime = 0
@@ -113,10 +120,6 @@ class Window(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawRect(self.rect())
 
-        # 字体
-        font = QFont("等线", 20, QFont.Bold)
-        painter.setFont(font)
-
         # 获取信息
         startReadTime = time.time()
         systemTime = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
@@ -171,9 +174,10 @@ class Window(QWidget):
                 gridX, gridY = drawX + ix * 64, drawY + iy * 64
                 gridColor = color[field[iy][ix]["color"]]["color"]
                 self.drawRect(painter, gridX, gridY, gridX + 64, gridY + 64, gridColor)
+                textColor = Qt.black if field[iy][ix]["special"] != 2 else Qt.white
+                # self.drawText(painter, gridX + 4, gridY + 4, hex(field[iy][ix]["address"])[2:].upper(), textColor, QFont("等线", 10))
                 if field[iy][ix]["special"] > 0:
-                    textColor = Qt.black if field[iy][ix]["special"] != 2 else Qt.white
-                    self.drawText(painter, gridX + 19, gridY + 19, special[field[iy][ix]["special"]], textColor)
+                    self.drawText(painter, gridX + 19, gridY + 19, special.get(field[iy][ix]["special"], special[0]), textColor)
         if cursor:
             cursorAddress = field[cursor[1]][cursor[0]]["address"]
             cursorColor = field[cursor[1]][cursor[0]]["color"]
@@ -181,7 +185,7 @@ class Window(QWidget):
             cursorPen = QPen(QColor(0, 0, 0, 255), 2) if cursorColor <= 6 else QPen(QColor(255, 255, 255, 255), 2)
             self.drawRect(painter, drawX + 64 * cursor[0] + 8, drawY + 64 * cursor[1] + 8, drawX + 64 * cursor[0] + 56, drawY + 64 * cursor[1] + 56, brush=Qt.NoBrush, border=cursorPen)
             self.drawText(painter, drawX, drawY + 520, f"地址: 0x{hex(cursorAddress)[2:].upper()}")
-            self.drawText(painter, drawX, drawY + 550, f"颜色: {color[cursorColor]['name']} 特宝:{special[cursorSpecial]}")
+            self.drawText(painter, drawX, drawY + 550, f"颜色: {color[cursorColor]['name']} 特宝:{special.get(cursorSpecial,special[0])}")
 
         if mode == "Ice Storm":
             ratio = (iceComboAllowTime + iceComboTime - currentTime) / iceComboAllowTime
@@ -198,7 +202,8 @@ class Window(QWidget):
 
         painter.end()
 
-    def drawText(self, painter: QPainter, X, Y, text, color=Qt.black):
+    def drawText(self, painter: QPainter, X, Y, text, color=Qt.black, font=QFont("等线", 20, QFont.Bold)):
+        painter.setFont(font)
         painter.setPen(color)
         textRect = self.rect()
         textRect.moveTopLeft(QPoint(X, Y))
@@ -216,8 +221,9 @@ class Window(QWidget):
         rect.moveTop(Y1)
         painter.drawRect(rect)
 
-    def closeWindow(self):
-        self.close()
+    def closeEvent(self, event):
+        with open("saveStates.dump", "wb") as f:
+            pickle.dump(saveStates, f)
 
 
 def onKeyboardPress(key):
