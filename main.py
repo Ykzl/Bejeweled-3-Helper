@@ -4,7 +4,7 @@ import time
 import pickle
 from pynput import keyboard
 from PyQt5.QtCore import QDateTime, QPoint, Qt, QTimer
-from PyQt5.QtWidgets import QApplication, QPushButton, QWidget
+from PyQt5.QtWidgets import QApplication, QComboBox, QPushButton, QWidget
 from PyQt5.QtGui import QColor, QCursor, QFont, QMouseEvent, QPainter, QPen
 from winMemUtils import getActiveWindowTitle, getWindow, read4Bytes, write4Bytes, pid
 
@@ -21,15 +21,22 @@ color = {
     4294967295: {"color": QColor(0, 0, 0, 255), "name": "无"},
 }
 special = {
-    -1: "",
-    0: "无",
-    1: "火",
-    2: "超",
-    4: "闪",
-    5: "星",
+    -1: {"name": "", "shortName": ""},
+    0: {"name": "普通", "shortName": ""},
+    1: {"name": "火焰", "shortName": "火"},
+    2: {"name": "超能", "shortName": "超"},
+    4: {"name": "闪电", "shortName": "闪"},
+    5: {"name": "超新星", "shortName": "星"},
+    #16: {"name": "倍率", "shortName": ""},
+    #32: {"name": "步数炸弹芯", "shortName": ""},
+    #64: {"name": "时间炸弹芯", "shortName": ""},
+    #128: {"name": "蝴蝶", "shortName": ""},
+    #256: {"name": "毁灭", "shortName": ""},
+    #512: {"name": "炸弹壳", "shortName": ""},
+    #4096: {"name": "Scrambler", "shortName": ""},
 }
 if os.path.exists("saveStates.dump"):
-    with open("saveStates.dump","rb") as f:
+    with open("saveStates.dump", "rb") as f:
         saveStates = pickle.load(f)
 else:
     saveStates = [None for i in range(10)]
@@ -41,10 +48,10 @@ cursor = None
 
 def saveOrLoad(i):
     global logs, logsTime
-    if "shift" in keyPressed:
+    if "shift" in keyPressed and "ctrl_l" in keyPressed:
         saveStates[i] = [[{"color": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x220]), "special": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x228])} for ix in range(8)] for iy in range(8)]
         logs, logsTime = f"已保存至存档 {i}", time.time()
-    else:
+    elif "ctrl_l" in keyPressed:
         if not saveStates[i]:
             logs, logsTime = f"存档 {i} 不存在", time.time()
             return
@@ -63,71 +70,39 @@ class Window(QWidget):
             button.clicked.connect(lambda: saveOrLoad(i))
             return button
 
-        def createButtonCursorColor(i):
-            button = QPushButton(f"{color[i]['name']}", self)
-            button.setGeometry(15 + 50 * i, 975, 50, 50)
-            button.setEnabled(False)
-            button.clicked.connect(lambda: write4Bytes(0x008E1730, i, [0xBE8, 0xF8 + 4 * cursor[0] + 32 * cursor[1], 0x220]))
-            return button
-
-        def createButtonCursorSpecial(i, xpos, name):
-            button = QPushButton(name, self)
-            button.setGeometry(15 + 50 * xpos, 1025, 50, 50)
-            button.setEnabled(False)
-            button.clicked.connect(lambda: write4Bytes(0x008E1730, i, [0xBE8, 0xF8 + 4 * cursor[0] + 32 * cursor[1], 0x228]))
-            return button
+        def comboSpecialChanged():
+            if not cursor:
+                return
+            write4Bytes(0x008E1730, int(self.comboSpecial.currentText().split(":")[0]), [0xBE8, 0xF8 + 4 * cursor[0] + 32 * cursor[1], 0x228])
 
         super().__init__(parent)
         self.setWindowTitle("Bejeweled 3 Helper")
         self.setGeometry(*getWindow())
+
         self.buttonSavestate = [createButtonSavestate(i) for i in range(10)]
-        self.buttonCursorColor = [createButtonCursorColor(i) for i in range(7)]
-        self.buttonCursorSpecial = []
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(0, 0, special[0]))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(1, 1, special[1]))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(2, 2, special[2]))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(4, 3, special[4]))
-        self.buttonCursorSpecial.append(createButtonCursorSpecial(5, 4, special[5]))
+        self.comboColor = QComboBox(self)
+        self.comboColor.setGeometry(10, 950, 120, 20)
+        self.comboColor.addItems([f"{k}: {v['name']}" for k, v in color.items() if v["name"]])
+        self.comboColor.currentIndexChanged.connect(lambda: write4Bytes(0x008E1730, int(self.comboColor.currentText().split(":")[0]), [0xBE8, 0xF8 + 4 * cursor[0] + 32 * cursor[1], 0x220]))
+        self.comboColor.setEnabled(False)
+        self.comboSpecial = QComboBox(self)
+        self.comboSpecial.setGeometry(150, 950, 120, 20)
+        self.comboSpecial.addItems([f"{k}: {v['name']}" for k, v in special.items() if v["name"]])
+        self.comboSpecial.currentIndexChanged.connect(comboSpecialChanged)
+        self.comboSpecial.setEnabled(False)
+
+        # self.mode=""
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.updateData)
         self.timer.start(10)
 
     def updateData(self):
-        self.update()
-
-    def mousePressEvent(self, event: QMouseEvent):
-        global cursor
-        if event.button() == Qt.LeftButton:
-            x, y = event.pos().x(), event.pos().y()
-            if 10 <= x < 522 and 400 <= y < 912:
-                ix, iy = int((x - 10) / 64), int((y - 400) / 64)
-                if cursor != (ix, iy):
-                    cursor = (ix, iy)
-                    for button in self.buttonCursorColor + self.buttonCursorSpecial:
-                        button.setEnabled(True)
-                    return
-            cursor = None
-            for button in self.buttonCursorColor + self.buttonCursorSpecial:
-                button.setEnabled(False)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        # 背景
-        painter.setBrush(QColor(0, 0, 64, 64))
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(self.rect())
-
-        # 获取信息
         startReadTime = time.time()
-        systemTime = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
-        statistics = {
+        self.statistics = {
             "gem": [read4Bytes(0x008E170C, [0xB80, 0xD0 + i * 4]) for i in range(11)],
         }
-        mode = ""
-        field = [
+        self.field = [
             [
                 {
                     "address": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy]),
@@ -138,88 +113,121 @@ class Window(QWidget):
             ]
             for iy in range(8)
         ]
-        score = read4Bytes(0x008E1730, [0xBE8, 0xD24])
-        progressAnim = read4Bytes(0x008E1730, [0xBE8, 0xD68], "float")
-        progress = read4Bytes(0x008E1730, [0xBE8, 0xE00])
-        level = read4Bytes(0x008E1730, [0xBE8, 0xE04])
-        if mode == "Ice Storm":
-            iceCombo = read4Bytes(0x008E1730, [0xBE8, 0x36C8])
-            currentTime = read4Bytes(0x008E1730, (0xBE8, 0xE38))
-            iceComboTime = read4Bytes(0x008E1730, [0xBE8, 0x36BC])
-            iceComboAllowTime = read4Bytes(0x008E1730, [0xBE8, 0x36C4])
-        endReadTime = time.time()
+        self.game = {
+            "score": read4Bytes(0x008E1730, [0xBE8, 0xD24]),
+            "progressAnim": read4Bytes(0x008E1730, [0xBE8, 0xD68], "float"),
+            "progress": read4Bytes(0x008E1730, [0xBE8, 0xE00]),
+            "level": read4Bytes(0x008E1730, [0xBE8, 0xE04]),
+        }
+        # if self.mode == "Ice Storm":
+        #    iceCombo = read4Bytes(0x008E1730, [0xBE8, 0x36C8])
+        #    currentTime = read4Bytes(0x008E1730, (0xBE8, 0xE38))
+        #    iceComboTime = read4Bytes(0x008E1730, [0xBE8, 0x36BC])
+        #    iceComboAllowTime = read4Bytes(0x008E1730, [0xBE8, 0x36C4])
+        self.readTime = time.time() - startReadTime
 
+        self.update()
+
+    def mousePressEvent(self, event: QMouseEvent):
+        global cursor
+        if event.button() == Qt.LeftButton:
+            x, y = event.pos().x(), event.pos().y()
+            if 10 <= x < 522 and 400 <= y < 912:
+                ix, iy = int((x - 10) / 64), int((y - 400) / 64)
+                if cursor != (ix, iy):
+                    cursor = (ix, iy)
+                    cursorColor = self.field[cursor[1]][cursor[0]]["color"]
+                    cursorSpecial = self.field[cursor[1]][cursor[0]]["special"]
+                    self.comboColor.setEnabled(True)
+                    self.comboColor.setCurrentIndex(cursorColor if 0 <= cursorColor <= 6 else 7)
+                    self.comboSpecial.setEnabled(True)
+                    self.comboSpecial.setEditable(True)
+                    self.comboSpecial.setEditText(f"{cursorSpecial}: {special[cursorSpecial]['name']}" if cursorSpecial in special else f"{cursorSpecial}")
+                    return
+            cursor = None
+            self.comboColor.setEnabled(False)
+            self.comboSpecial.setEnabled(False)
+            self.comboSpecial.setEditable(False)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        def drawText(X, Y, text, color=Qt.black, font=QFont("等线", 20, QFont.Bold)):
+            painter.setFont(font)
+            painter.setPen(color)
+            textRect = self.rect()
+            textRect.moveTopLeft(QPoint(X, Y))
+            painter.drawText(textRect, Qt.AlignLeft, text)
+
+        def drawRect(X1, Y1, X2, Y2, brush=QColor(255, 255, 255, 255), border=QPen(QColor(0, 0, 0, 255), 1)):
+            if X2 < X1 or Y2 < Y1:
+                return
+            painter.setPen(border)
+            painter.setBrush(brush)
+            rect = self.rect()
+            rect.setWidth(X2 - X1)
+            rect.setHeight(Y2 - Y1)
+            rect.moveLeft(X1)
+            rect.moveTop(Y1)
+            painter.drawRect(rect)
+
+        # 背景
+        painter.setBrush(QColor(0, 0, 64, 64))
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(self.rect())
         # 绘制
         drawX, drawY = 10, 10
-        self.drawText(painter, drawX, drawY, systemTime)
-        drawY += 30
-        self.drawText(painter, drawX, drawY, f"Process ID: {pid}")
-        drawY += 30
-        self.drawText(painter, drawX, drawY, f"获取信息耗时: {endReadTime-startReadTime:.3f}")
-        drawY += 30
-        self.drawText(painter, drawX, drawY, f"总宝石数: {statistics['gem'][0]}")
-        drawY += 30
-        self.drawText(painter, drawX, drawY, f"等级: {level} 分数: {score}")
-        drawY += 30
-        self.drawText(painter, drawX, drawY, f"进展: {progressAnim*100:.2f}% ({progress}/{level * 750 + 2500 if level<30 else 25000})")
-        drawY = 350
+        drawText(
+            drawX,
+            drawY,
+            f"""{QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")}
+Process ID: {pid}
+获取信息耗时: {self.readTime:.3f}
+总宝石数: {self.statistics['gem'][0]}
+等级: {self.game["level"]} 分数: {self.game["score"]}
+进展: {self.game["progressAnim"]*100:.2f}% ({self.game["progress"]}/{self.game["level"] * 750 + 2500 if self.game["level"]<30 else 25000})
+""",
+        )
+
+        field = self.field
+        drawX, drawY = 10, 350
         mousePos = self.mapFromGlobal(QCursor.pos())
         for i, button in enumerate(self.buttonSavestate):
             if button.geometry().contains(mousePos) and saveStates[i]:
                 field = saveStates[i]
-                self.drawText(painter, drawX, drawY, f"*预览: 存档 {i}")
-        drawY += 50
+                drawText(drawX, drawY, f"*预览: 存档 {i}")
+
+        drawX, drawY = 10, 400
         for iy in range(8):
             for ix in range(8):
                 gridX, gridY = drawX + ix * 64, drawY + iy * 64
-                gridColor = color[field[iy][ix]["color"]]["color"]
-                self.drawRect(painter, gridX, gridY, gridX + 64, gridY + 64, gridColor)
-                textColor = Qt.black if field[iy][ix]["special"] != 2 else Qt.white
-                # self.drawText(painter, gridX + 4, gridY + 4, hex(field[iy][ix]["address"])[2:].upper(), textColor, QFont("等线", 10))
-                if field[iy][ix]["special"] > 0:
-                    self.drawText(painter, gridX + 19, gridY + 19, special.get(field[iy][ix]["special"], special[0]), textColor)
+                gridColor = field[iy][ix]["color"]
+                gridSpecial = field[iy][ix]["special"]
+                drawRect(gridX, gridY, gridX + 64, gridY + 64, color[gridColor]["color"])
+                textColor = Qt.black if 0 <= field[iy][ix]["color"] <= 6 else Qt.white
+                # drawText(gridX + 4, gridY + 4, hex(field[iy][ix]["address"])[2:].upper(), textColor, QFont("等线", 10))
+                drawText(gridX + 19, gridY + 19, special[gridSpecial]["shortName"] if gridSpecial in special else "？", textColor)
         if cursor:
-            cursorAddress = field[cursor[1]][cursor[0]]["address"]
             cursorColor = field[cursor[1]][cursor[0]]["color"]
             cursorSpecial = field[cursor[1]][cursor[0]]["special"]
             cursorPen = QPen(QColor(0, 0, 0, 255), 2) if cursorColor <= 6 else QPen(QColor(255, 255, 255, 255), 2)
-            self.drawRect(painter, drawX + 64 * cursor[0] + 8, drawY + 64 * cursor[1] + 8, drawX + 64 * cursor[0] + 56, drawY + 64 * cursor[1] + 56, brush=Qt.NoBrush, border=cursorPen)
-            self.drawText(painter, drawX, drawY + 520, f"地址: 0x{hex(cursorAddress)[2:].upper()}")
-            self.drawText(painter, drawX, drawY + 550, f"颜色: {color[cursorColor]['name']} 特宝:{special.get(cursorSpecial,special[0])}")
+            drawRect(drawX + 64 * cursor[0] + 8, drawY + 64 * cursor[1] + 8, drawX + 64 * cursor[0] + 56, drawY + 64 * cursor[1] + 56, brush=Qt.NoBrush, border=cursorPen)
+            drawText(drawX, drawY + 520, f"颜色: {color[cursorColor]['name']} 特宝:{special[cursorSpecial]['name'] if cursorSpecial in special else cursorSpecial}")
 
-        if mode == "Ice Storm":
-            ratio = (iceComboAllowTime + iceComboTime - currentTime) / iceComboAllowTime
-            self.drawText(painter, drawX + 255, drawY, f"x{iceCombo}", Qt.blue if ratio > 0 and iceCombo > 0 else Qt.black)
-            drawY += 30
-            self.drawRect(painter, drawX + 9, drawY - 1, drawX + 511, drawY + 41)
-            if iceCombo > 0:
-                self.drawRect(painter, drawX + 10, drawY, int(drawX + 10 + 510 * ratio), drawY + 40, Qt.blue, Qt.NoPen)
+        # if self.mode == "Ice Storm":
+        #    ratio = (iceComboAllowTime + iceComboTime - currentTime) / iceComboAllowTime
+        #    drawText(drawX + 255, drawY, f"x{iceCombo}", Qt.blue if ratio > 0 and iceCombo > 0 else Qt.black)
+        #    drawY += 30
+        #    drawRect(drawX + 9, drawY - 1, drawX + 511, drawY + 41)
+        #    if iceCombo > 0:
+        #        drawRect(drawX + 10, drawY, int(drawX + 10 + 510 * ratio), drawY + 40, Qt.blue, Qt.NoPen)
 
-        drawY = self.height() - 60
-        self.drawText(painter, drawX, drawY, "日志:")
-        drawY += 25
-        self.drawText(painter, drawX, drawY, f"{logs}", QColor(0, 0, 0, min(255, max(0, int(64 * (logsTime + 4 - time.time()))))))
+        drawX, drawY = 10, self.height() - 60
+        drawText(drawX, drawY, "日志:")
+        drawText(drawX, drawY + 25, f"{logs}", QColor(0, 0, 0, min(255, max(0, int(64 * (logsTime + 4 - time.time()))))))
 
         painter.end()
-
-    def drawText(self, painter: QPainter, X, Y, text, color=Qt.black, font=QFont("等线", 20, QFont.Bold)):
-        painter.setFont(font)
-        painter.setPen(color)
-        textRect = self.rect()
-        textRect.moveTopLeft(QPoint(X, Y))
-        painter.drawText(textRect, Qt.AlignLeft, text)
-
-    def drawRect(self, painter: QPainter, X1, Y1, X2, Y2, brush=QColor(255, 255, 255, 255), border=QPen(QColor(0, 0, 0, 255), 1)):
-        if X2 < X1 or Y2 < Y1:
-            return
-        painter.setPen(border)
-        painter.setBrush(brush)
-        rect = self.rect()
-        rect.setWidth(X2 - X1)
-        rect.setHeight(Y2 - Y1)
-        rect.moveLeft(X1)
-        rect.moveTop(Y1)
-        painter.drawRect(rect)
 
     def closeEvent(self, event):
         with open("saveStates.dump", "wb") as f:
