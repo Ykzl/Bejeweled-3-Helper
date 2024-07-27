@@ -15,9 +15,9 @@ color = {
     1: {"color": QColor(255, 255, 255, 255), "name": "白"},
     2: {"color": QColor(0, 255, 0, 255), "name": "绿"},
     3: {"color": QColor(255, 255, 0, 255), "name": "黄"},
-    4: {"color": QColor(128, 0, 255, 255), "name": "紫"},
+    4: {"color": QColor(255, 0, 255, 255), "name": "紫"},
     5: {"color": QColor(255, 128, 0, 255), "name": "橙"},
-    6: {"color": QColor(0, 0, 255, 255), "name": "蓝"},
+    6: {"color": QColor(0, 128, 255, 255), "name": "蓝"},
     4294967295: {"color": QColor(0, 0, 0, 255), "name": "无"},
 }
 special = {
@@ -59,6 +59,8 @@ def saveOrLoad(i):
             for iy in range(8):
                 write4Bytes(0x008E1730, saveStates[i][iy][ix]["color"], [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x220])
                 write4Bytes(0x008E1730, saveStates[i][iy][ix]["special"], [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x228])
+                if "preColor" in saveStates[i][iy][ix]:
+                    write4Bytes(0x008E1730, saveStates[i][iy][ix]["preColor"], [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x21C])
         logs, logsTime = f"已读取存档 {i}", time.time()
 
 
@@ -95,26 +97,27 @@ class Window(QWidget):
 
         # self.mode=""
 
+        self.updateData()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.updateData)
         self.timer.start(10)
 
     def updateData(self):
+        def readGem(x, y) -> dict:
+            gem = {
+                "address": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y]),
+                "color": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x220]),
+                "special": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x228]),
+            }
+            if gem["special"] == 2:
+                gem["preColor"] = read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x21C])
+            return gem
+
         startReadTime = time.time()
         self.statistics = {
             "gem": [read4Bytes(0x008E170C, [0xB80, 0xD0 + i * 4]) for i in range(11)],
         }
-        self.field = [
-            [
-                {
-                    "address": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy]),
-                    "color": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x220]),
-                    "special": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x228]),
-                }
-                for ix in range(8)
-            ]
-            for iy in range(8)
-        ]
+        self.field = [[readGem(ix, iy) for ix in range(8)] for iy in range(8)]
         self.game = {
             "score": read4Bytes(0x008E1730, [0xBE8, 0xD24]),
             "progressAnim": read4Bytes(0x008E1730, [0xBE8, 0xD68], "float"),
@@ -175,10 +178,8 @@ class Window(QWidget):
             painter.drawRect(rect)
 
         # 背景
-        # painter.setBrush(QColor(0, 0, 64, 64))
-        # painter.setPen(Qt.NoPen)
-        # painter.drawRect(self.rect())
         painter.drawPixmap(self.rect(), self.bg)
+
         # 绘制
         drawX, drawY = 10, 10
         drawText(
@@ -208,8 +209,11 @@ Process ID: {pid}
                 gridColor = field[iy][ix]["color"]
                 gridSpecial = field[iy][ix]["special"]
                 drawRect(gridX, gridY, gridX + 64, gridY + 64, color[gridColor]["color"])
-                textColor = Qt.black if 0 <= field[iy][ix]["color"] <= 6 else Qt.white
-                # drawText(gridX + 4, gridY + 4, hex(field[iy][ix]["address"])[2:].upper(), textColor, QFont("等线", 10))
+                if gridSpecial != 2:
+                    textColor = Qt.black if 0 <= gridColor <= 6 else Qt.white
+                else:
+                    textColor = color[field[iy][ix]["preColor"]]["color"] if 0 <= field[iy][ix]["preColor"] <= 6 else Qt.white
+                drawText(gridX + 2, gridY + 2, hex(field[iy][ix]["address"])[2:].upper(), textColor, QFont("等线", 10))
                 drawText(gridX + 19, gridY + 19, special[gridSpecial]["shortName"] if gridSpecial in special else "？", textColor)
         if cursor:
             cursorColor = field[cursor[1]][cursor[0]]["color"]
