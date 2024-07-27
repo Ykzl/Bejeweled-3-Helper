@@ -188,7 +188,7 @@ class Window(QWidget):
 Process ID: {pid}
 获取信息耗时: {self.readTime:.3f}
 总宝石数: {self.statistics['gem'][0]}
-等级: {self.game["level"]} 分数: {self.game["score"]}
+等级: {self.game["level"]+1} 分数: {self.game["score"]}
 进展: {self.game["progressAnim"]*100:.2f}% ({self.game["progress"]}/{self.game["level"] * 750 + 2500 if self.game["level"]<30 else 25000})
 """,
         )
