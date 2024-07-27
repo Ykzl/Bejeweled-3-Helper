@@ -4,13 +4,13 @@ import time
 import pickle
 from pynput import keyboard
 from PyQt5.QtCore import QDateTime, QPoint, Qt, QTimer
-from PyQt5.QtWidgets import QApplication, QComboBox, QPushButton, QWidget
-from PyQt5.QtGui import QColor, QCursor, QFont, QMouseEvent, QPainter, QPen
+from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QWidget
+from PyQt5.QtGui import QColor, QCursor, QFont, QMouseEvent, QPainter, QPen, QPixmap
 from winMemUtils import getActiveWindowTitle, getWindow, read4Bytes, write4Bytes, pid
 
 
 color = {
-    -1: {"color": QColor(0, 0, 0, 255), "name": ""},
+    -1: {"color": QColor(0, 0, 0, 0), "name": ""},
     0: {"color": QColor(255, 0, 0, 255), "name": "红"},
     1: {"color": QColor(255, 255, 255, 255), "name": "白"},
     2: {"color": QColor(0, 255, 0, 255), "name": "绿"},
@@ -27,13 +27,13 @@ special = {
     2: {"name": "超能", "shortName": "超"},
     4: {"name": "闪电", "shortName": "闪"},
     5: {"name": "超新星", "shortName": "星"},
-    #16: {"name": "倍率", "shortName": ""},
-    #32: {"name": "步数炸弹芯", "shortName": ""},
-    #64: {"name": "时间炸弹芯", "shortName": ""},
-    #128: {"name": "蝴蝶", "shortName": ""},
-    #256: {"name": "毁灭", "shortName": ""},
-    #512: {"name": "炸弹壳", "shortName": ""},
-    #4096: {"name": "Scrambler", "shortName": ""},
+    # 16: {"name": "倍率", "shortName": ""},
+    # 32: {"name": "步数炸弹芯", "shortName": ""},
+    # 64: {"name": "时间炸弹芯", "shortName": ""},
+    # 128: {"name": "蝴蝶", "shortName": ""},
+    # 256: {"name": "毁灭", "shortName": ""},
+    # 512: {"name": "炸弹壳", "shortName": ""},
+    # 4096: {"name": "Scrambler", "shortName": ""},
 }
 if os.path.exists("saveStates.dump"):
     with open("saveStates.dump", "rb") as f:
@@ -79,6 +79,8 @@ class Window(QWidget):
         self.setWindowTitle("Bejeweled 3 Helper")
         self.setGeometry(*getWindow())
 
+        originBG = QPixmap("bg.jpg")
+        self.bg = originBG.copy(originBG.width() - int(4 * self.height() / 9), 0, int(4 * self.height() / 9), originBG.height())
         self.buttonSavestate = [createButtonSavestate(i) for i in range(10)]
         self.comboColor = QComboBox(self)
         self.comboColor.setGeometry(10, 950, 120, 20)
@@ -173,9 +175,10 @@ class Window(QWidget):
             painter.drawRect(rect)
 
         # 背景
-        painter.setBrush(QColor(0, 0, 64, 64))
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(self.rect())
+        # painter.setBrush(QColor(0, 0, 64, 64))
+        # painter.setPen(Qt.NoPen)
+        # painter.drawRect(self.rect())
+        painter.drawPixmap(self.rect(), self.bg)
         # 绘制
         drawX, drawY = 10, 10
         drawText(
