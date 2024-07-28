@@ -62,7 +62,7 @@ def write4Bytes(address, data, offsets=[], dataType="int"):
     elif dataType == "float":
         buffer = ctypes.create_string_buffer(ctypes.c_float(float(data)).raw)
 
-    success = ctypes.windll.kernel32.WriteProcessMemory(processHandle, address, buffer, len(buffer), ctypes.byref(ctypes.c_ulong(0)))
+    success = ctypes.windll.kernel32.WriteProcessMemory(processHandle, address, buffer, 4, ctypes.byref(ctypes.c_ulong(0)))
 
     if not success:
         error_code = ctypes.GetLastError()

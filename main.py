@@ -46,10 +46,21 @@ logsTime = 0
 cursor = None
 
 
+def readGem(x, y):
+    gem = {
+        "address": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y]),
+        "color": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x220]),
+        "special": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x228]),
+    }
+    if gem["special"] == 2:
+        gem["preColor"] = read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x21C])
+    return gem
+
+
 def saveOrLoad(i):
     global logs, logsTime
     if "shift" in keyPressed and "ctrl_l" in keyPressed:
-        saveStates[i] = [[{"color": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x220]), "special": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * ix + 32 * iy, 0x228])} for ix in range(8)] for iy in range(8)]
+        saveStates[i] = [[readGem(ix, iy) for ix in range(8)] for iy in range(8)]
         logs, logsTime = f"已保存至存档 {i}", time.time()
     elif "ctrl_l" in keyPressed:
         if not saveStates[i]:
@@ -103,15 +114,6 @@ class Window(QWidget):
         self.timer.start(10)
 
     def updateData(self):
-        def readGem(x, y) -> dict:
-            gem = {
-                "address": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y]),
-                "color": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x220]),
-                "special": read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x228]),
-            }
-            if gem["special"] == 2:
-                gem["preColor"] = read4Bytes(0x008E1730, [0xBE8, 0xF8 + 4 * x + 32 * y, 0x21C])
-            return gem
 
         startReadTime = time.time()
         self.statistics = {
@@ -209,11 +211,11 @@ Process ID: {pid}
                 gridColor = field[iy][ix]["color"]
                 gridSpecial = field[iy][ix]["special"]
                 drawRect(gridX, gridY, gridX + 64, gridY + 64, color[gridColor]["color"])
-                if gridSpecial != 2:
-                    textColor = Qt.black if 0 <= gridColor <= 6 else Qt.white
+                if "preColor" in field[iy][ix]:
+                    textColor = color[field[iy][ix]["preColor"]]["color"] if 0 <= field[iy][ix]["preColor"] <= 6 else Qt.gray
                 else:
-                    textColor = color[field[iy][ix]["preColor"]]["color"] if 0 <= field[iy][ix]["preColor"] <= 6 else Qt.white
-                drawText(gridX + 2, gridY + 2, hex(field[iy][ix]["address"])[2:].upper(), textColor, QFont("等线", 10))
+                    textColor = Qt.black if 0 <= gridColor <= 6 else Qt.white
+                #drawText(gridX + 2, gridY + 2, hex(field[iy][ix]["address"])[2:].upper(), textColor, QFont("等线", 10))
                 drawText(gridX + 19, gridY + 19, special[gridSpecial]["shortName"] if gridSpecial in special else "？", textColor)
         if cursor:
             cursorColor = field[cursor[1]][cursor[0]]["color"]
